@@ -1,0 +1,6 @@
+{
+  "name": "tray-pipeline-demo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Photo-to-Tray Pipeline: homography, segmentation, Clipper2 offsets, manifold3d CSG, STL + SVG export"
+}

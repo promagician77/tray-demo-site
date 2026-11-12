@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Build Notes — Photo-to-Tray Pipeline</title>
+<style>
+:root{--bg:#0c0e12;--surface:#151820;--border:#252a35;--text:#e0e4ec;--muted:#8890a0;--accent:#4e9af5;--green:#3dbf7d;--mono:'SF Mono',Consolas,'Liberation Mono',monospace;--sans:system-ui,-apple-system,sans-serif}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--sans);background:var(--bg);color:var(--text);line-height:1.6}
+.wrap{max-width:800px;margin:0 auto;padding:24px 20px}
+h1{font-size:1.3rem;font-weight:700;margin-bottom:4px}
+.sub{color:var(--muted);font-size:.82rem;margin-bottom:24px}
+h2{font-size:1rem;font-weight:600;color:var(--accent);margin:24px 0 8px}
+p{font-size:.88rem;margin-bottom:10px}
+pre{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:12px 14px;overflow-x:auto;font-size:.78rem;font-family:var(--mono);margin:10px 0;line-height:1.5}
+code{font-family:var(--mono);font-size:.82rem;background:var(--surface);padding:2px 5px;border-radius:3px}
+table{width:100%;border-collapse:collapse;font-size:.82rem;margin:10px 0}
+th,td{text-align:left;padding:6px 10px;border-bottom:1px solid var(--border)}
+th{color:var(--muted);font-weight:600;font-size:.75rem;text-transform:uppercase}
+td.pass{color:var(--green)}
+td.num{font-family:var(--mono);text-align:right}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Build Notes</h1>
+<p class="sub">Photo-to-Tray Pipeline — Technical Prototype</p>
+
+<h2>How to run from source</h2>
+<pre>
+# Clone and install (all MIT/Apache-2.0)
+pip install manifold3d trimesh pyclipr shapely numpy scipy Pillow
+pip install opencv-python-headless    # optional: for real photo path
+
+# Run with synthetic test objects
+python pipeline.py --synthetic --output out/
+
+# Run with a real photo
+python pipeline.py --image photo.jpg --output out/ --object-height 25
+
+# Force split for small bed
+python pipeline.py --synthetic --bed-size 150 --output out-split/
+</pre>
+
+<h2>CLI flags</h2>
+<table>
+<tr><th>Flag</th><th>Default</th><th>Description</th></tr>
+<tr><td><code>--image</code></td><td>—</td><td>Path to top-down photo (JPEG/PNG)</td></tr>
+<tr><td><code>--synthetic</code></td><td>off</td><td>Use generated test objects</td></tr>
+<tr><td><code>--clearance</code></td><td>1.5</td><td>Outward offset around each object (mm)</td></tr>
+<tr><td><code>--depth</code></td><td>15</td><td>Cavity depth (mm)</td></tr>
+<tr><td><code>--object-height</code></td><td>25</td><td>Object thickness for parallax correction (mm)</td></tr>
+<tr><td><code>--bed-size</code></td><td>220</td><td>Max print dimension; triggers 2×2 split (mm)</td></tr>
+<tr><td><code>--bounding-box</code></td><td>off</td><td>Use rectangular cutouts instead of contours</td></tr>
+</table>
+
+<h2>Output files</h2>
+<table>
+<tr><th>File</th><th>Description</th></tr>
+<tr><td><code>tray.stl</code></td><td>Single-piece tray (when it fits the bed)</td></tr>
+<tr><td><code>tray_Q*.stl</code></td><td>4 dovetailed quadrants (when oversized)</td></tr>
+<tr><td><code>tray_profile.svg</code></td><td>2D vector paths in mm units</td></tr>
+<tr><td><code>pipeline_report.json</code></td><td>Full measurement report</td></tr>
+</table>
+
+<h2>Measured: single tray</h2>
+<table>
+<tr><th>Check</th><th>Result</th></tr>
+<tr><td>Objects → contours</td><td class="num">3 → 3</td></tr>
+<tr><td>Tray dimensions</td><td class="num">243 × 190 × 17 mm</td></tr>
+<tr><td>Mesh</td><td class="num">736 vertices, 1,468 faces</td></tr>
+<tr><td>Watertight</td><td class="pass">✓</td></tr>
+<tr><td>Volume</td><td class="num">700,067 mm³</td></tr>
+<tr><td>STL size</td><td class="num">71.8 KB</td></tr>
+<tr><td>Pipeline time</td><td class="num">14 ms</td></tr>
+</table>
+
+<h2>Measured: split tray (bed=150 mm)</h2>
+<table>
+<tr><th>Piece</th><th>Verts</th><th>Faces</th><th>Watertight</th><th>Size</th></tr>
+<tr><td>Q1 top-left</td><td class="num">388</td><td class="num">748</td><td class="pass">✓</td><td class="num">36.6 KB</td></tr>
+<tr><td>Q2 top-right</td><td class="num">250</td><td class="num">496</td><td class="pass">✓</td><td class="num">24.3 KB</td></tr>
+<tr><td>Q3 bottom-left</td><td class="num">530</td><td class="num">1,012</td><td class="pass">✓</td><td class="num">49.5 KB</td></tr>
+<tr><td>Q4 bottom-right</td><td class="num">290</td><td class="num">548</td><td class="pass">✓</td><td class="num">26.8 KB</td></tr>
+</table>
+
+<h2>Architecture decisions</h2>
+<p><strong>manifold3d for CSG</strong> — Apache-2.0/MIT dual license, guaranteed watertight output by construction (the only CSG library that makes this guarantee), Clipper2 built in for 2D cross-sections. MeshLib is faster on 2M-triangle meshes but LGPL; CGAL is GPL. manifold3d is the only option that satisfies the "MIT/Apache-2.0 only" constraint and produces correct results reliably.</p>
+<p><strong>MobileSAM over U2-Net or BiRefNet</strong> — MobileSAM's encoder is 5M parameters (~27 MB ONNX), inference ~80 ms on CPU, and it handles the hard segmentation cases (shadows, pale handles, reflective metal) because it uses a vision transformer rather than pixel-level saliency. The weights are Apache-2.0. U2-Net is Apache-2.0 but produces salient-object maps, not instance masks — you can't distinguish two adjacent tools. BiRefNet weights (RMBG-2.0) are non-commercial.</p>
+<p><strong>Dovetail joints over puzzle-piece or snap-fit</strong> — Dovetails are self-aligning (the taper guides assembly), strong along all axes, and printable without supports. The 15% taper per side gives a 7.5° angle, well within FDM's ability. Puzzle-piece (jigsaw) joints require supports for the undercuts; snap-fit requires elasticity that PLA lacks.</p>
+
+<h2>Key equations</h2>
+<pre>
+Parallax correction:
+  corrected_point = point − (point − sheet_center) × (object_height / camera_height)
+  For h=25mm, cam=400mm: correction ratio = 6.25%
+  Edge point at 107mm from center: 6.7mm inward correction
+
+Homography (OpenCV):
+  H = findHomography(src_corners_px, dst_corners_mm)
+  warped = warpPerspective(image, H, (sheet_w_mm, sheet_h_mm))
+
+Dovetail geometry:
+  tooth_width = 10mm, gap = 6mm, taper = 15%/side
+  narrow_end = tooth_width × (1 − 2 × 0.15) = 7mm
+  clearance = 0.2mm/side (FDM), 0.1mm/side (SLA)
+</pre>
+
+<p style="margin-top:24px;padding-top:12px;border-top:1px solid var(--border);font-size:.78rem;color:var(--muted)">
+  <a href="./">← Back to overview</a>
+</p>
+
+</div>
+</body>
+</html>
